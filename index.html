@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quadrado Movível - Multiplayer P2P</title>
+
+<!-- Importa a biblioteca PeerJS para conexão direta entre os 2 jogadores -->
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+<style>
+    html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: white;
+        font-family: sans-serif;
+    }
+
+    /* Jogador Local (Preto) */
+    #player {
+        position: absolute;
+        width: 15px;
+        height: 15px;
+        background: black;
+        left: 100px;
+        top: 100px;
+    }
+
+    /* Jogador Remoto (Vermelho) */
+    #other-player {
+        position: absolute;
+        width: 15px;
+        height: 15px;
+        background: red;
+        left: -100px; /* Inicia fora da tela até o outro conectar */
+        top: -100px;
+    }
+
+    /* Interface de Conexão */
+    #ui {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(230, 230, 230, 0.9);
+        padding: 12px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        z-index: 10;
+        font-size: 14px;
+    }
+
+    #ui input {
+        width: 140px;
+        padding: 4px;
+    }
+
+    #ui button {
+        padding: 4px 8px;
+        cursor: pointer;
+    }
+
+    #status {
+        font-weight: bold;
+        margin-top: 6px;
+    }
+</style>
+</head>
+<body>
+
+<!-- Interface para conectar os jogadores -->
+<div id="ui">
+    <div><strong>Seu ID:</strong> <span id="my-id">Gerando...</span></div>
+    <div style="margin-top: 8px;">
+        <input type="text" id="peer-id-input" placeholder="Cole o ID do amigo">
+        <button id="connect-btn">Conectar</button>
+    </div>
+    <div id="status" style="color: orange;">Aguardando conexão...</div>
+</div>
+
+<!-- Elementos dos dois jogadores -->
+<div id="player"></div>
+<div id="other-player"></div>
+
+<script>
+const player = document.getElementById("player");
+const otherPlayer = document.getElementById("other-player");
+const myIdDisplay = document.getElementById("my-id");
+const peerIdInput = document.getElementById("peer-id-input");
+const connectBtn = document.getElementById("connect-btn");
+const statusDisplay = document.getElementById("status");
+
+let x = 100;
+let y = 100;
+const speed = 5;
+const keys = {};
+
+let activeConn = null; // Guarda a conexão com o outro jogador
+
+// 1. Inicializa o PeerJS (Servidor de sinalização do PeerJS cria um ID único)
+const peer = new Peer();
+
+peer.on('open', (id) => {
+    myIdDisplay.innerText = id;
+});
+
+// Trata quando OUTRO jogador se conecta a VOCÊ (Você é o Host)
+peer.on('connection', (conn) => {
+    setupConnection(conn);
+});
+
+// Trata o clique para VOCÊ se conectar ao AMIGO
+connectBtn.addEventListener('click', () => {
+    const targetId = peerIdInput.value.trim();
+    if (targetId) {
+        const conn = peer.connect(targetId);
+        setupConnection(conn);
+    }
+});
+
+// Função para configurar a troca de dados entre os 2
+function setupConnection(conn) {
+    activeConn = conn;
+
+    conn.on('open', () => {
+        statusDisplay.innerText = "Conectado!";
+        statusDisplay.style.color = "green";
+    });
+
+    // Recebe a posição do outro jogador e atualiza o quadrado vermelho
+    conn.on('data', (data) => {
+        if (data.type === 'move') {
+            otherPlayer.style.left = data.x + "px";
+            otherPlayer.style.top = data.y + "px";
+        }
+    });
+
+    conn.on('close', () => {
+        statusDisplay.innerText = "Desconectado.";
+        statusDisplay.style.color = "red";
+        otherPlayer.style.left = "-100px";
+        activeConn = null;
+    });
+}
+
+// 2. Eventos de Teclado
+window.addEventListener("keydown", (e) => {
+    keys[e.key.toLowerCase()] = true;
+});
+
+window.addEventListener("keyup", (e) => {
+    keys[e.key.toLowerCase()] = false;
+});
+
+// 3. Loop principal do jogo
+function update() {
+    let moved = false;
+
+    if (keys["w"] || keys["arrowup"]) { y -= speed; moved = true; }
+    if (keys["s"] || keys["arrowdown"]) { y += speed; moved = true; }
+    if (keys["a"] || keys["arrowleft"]) { x -= speed; moved = true; }
+    if (keys["d"] || keys["arrowright"]) { x += speed; moved = true; }
+
+    const maxX = window.innerWidth - player.offsetWidth;
+    const maxY = window.innerHeight - player.offsetHeight;
+
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x > maxX) x = maxX;
+    if (y > maxY) y = maxY;
+
+    player.style.left = x + "px";
+    player.style.top = y + "px";
+
+    // Se o jogador se moveu e existe uma conexão ativa, envia a nova posição
+    if (moved && activeConn && activeConn.open) {
+        activeConn.send({ type: 'move', x: x, y: y });
+    }
+
+    requestAnimationFrame(update);
+}
+
+update();
+</script>
+
+</body>
+</html>
