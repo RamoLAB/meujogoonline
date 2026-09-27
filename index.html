@@ -17,11 +17,16 @@
         overflow: hidden;
         background: #ffffff;
         font-family: Arial, sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
     }
 
+    /* O Canvas terá tamanho estritamente fixo de 750x750 */
     canvas {
         display: block;
         background: #ffffff;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
     }
 
     /* Interface de Conexão Clean */
@@ -98,7 +103,7 @@
     <span style="font-size: 16px; color: #555; font-weight: normal;">Reiniciando em <span id="timer">5</span>...</span>
 </div>
 
-<canvas id="gameCanvas"></canvas>
+<canvas id="gameCanvas" width="750" height="750"></canvas>
 
 <script>
 const canvas = document.getElementById("gameCanvas");
@@ -111,12 +116,12 @@ const statusDisplay = document.getElementById("status");
 const gameOverScreen = document.getElementById("game-over");
 const timerDisplay = document.getElementById("timer");
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+// Dimensão total fixa
+const MAZE_SIZE = 750;
 
 let isGameOver = false;
 
-// 1 = Parede, 0 = Corredor, 2 = Goal (Centro)
+// Matriz N x N do Labirinto (1 = Parede, 0 = Caminho, 2 = Goal)
 const mazeGrid = [
     [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
     [1,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,1],
@@ -141,39 +146,18 @@ const mazeGrid = [
     [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
 ];
 
-let tileSize = 0;
-let offsetX = 0;
-let offsetY = 0;
+const N = mazeGrid.length; // Número de divisões (21)
+const tileSize = MAZE_SIZE / N; // Tamanho dinâmico proporcional das células (750 / N)
 
-// Configurações dos Jogadores (P1 = Azul, P2 = Vermelho)
-const playerSizeRatio = 0.5; // Tamanho proporcional à célula para deslizar bem
-let playerSize = 0;
-
+// Jogadores
+const playerSize = tileSize * 0.55;
 let p1 = { x: 0, y: 0, vx: 0, vy: 0, color: "#0066FF" };
 let p2 = { x: -100, y: -100, color: "#FF3333" };
 
-// Aceleração e Atrito para movimentação fluida
-const accel = 0.6;
-const friction = 0.82;
+const accel = 0.55;
+const friction = 0.81;
 
-function calculateLayout() {
-    const rows = mazeGrid.length;
-    const cols = mazeGrid[0].length;
-    tileSize = Math.min(canvas.width / cols, canvas.height / rows) * 0.9;
-    playerSize = tileSize * playerSizeRatio;
-
-    offsetX = (canvas.width - cols * tileSize) / 2;
-    offsetY = (canvas.height - rows * tileSize) / 2;
-}
-calculateLayout();
-
-window.addEventListener('resize', () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    calculateLayout();
-});
-
-// Checa colisão com paredes usando caixa delimitadora (Bounding Box)
+// Validação de colisão por Bounding Box
 function isCollidingWithWalls(newX, newY) {
     const margin = 1;
     const points = [
@@ -184,25 +168,24 @@ function isCollidingWithWalls(newX, newY) {
     ];
 
     for (let pt of points) {
-        let c = Math.floor((pt.x - offsetX) / tileSize);
-        let r = Math.floor((pt.y - offsetY) / tileSize);
+        let c = Math.floor(pt.x / tileSize);
+        let r = Math.floor(pt.y / tileSize);
 
-        if (r >= 0 && r < mazeGrid.length && c >= 0 && c < mazeGrid[0].length) {
+        if (r >= 0 && r < N && c >= 0 && c < N) {
             if (mazeGrid[r][c] === 1) return true;
         }
     }
     return false;
 }
 
-// Checa se o centro do jogador encostou na célula do Goal (2)
 function checkGoal(px, py) {
     let centerX = px + playerSize / 2;
     let centerY = py + playerSize / 2;
 
-    let c = Math.floor((centerX - offsetX) / tileSize);
-    let r = Math.floor((centerY - offsetY) / tileSize);
+    let c = Math.floor(centerX / tileSize);
+    let r = Math.floor(centerY / tileSize);
 
-    if (r >= 0 && r < mazeGrid.length && c >= 0 && c < mazeGrid[0].length) {
+    if (r >= 0 && r < N && c >= 0 && c < N) {
         if (mazeGrid[r][c] === 2) {
             triggerWin();
         }
@@ -232,8 +215,8 @@ function triggerWin() {
 }
 
 function resetGame() {
-    p1.x = offsetX + tileSize + (tileSize - playerSize) / 2;
-    p1.y = offsetY + tileSize + (tileSize - playerSize) / 2;
+    p1.x = tileSize + (tileSize - playerSize) / 2;
+    p1.y = tileSize + (tileSize - playerSize) / 2;
     p1.vx = 0;
     p1.vy = 0;
     p2.x = -100;
@@ -284,34 +267,29 @@ const keys = {};
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
-// --- LOOP DO JOGO (Movimentação com física contínua) ---
+// --- LOOP PRINCIPAL DO JOGO ---
 function update() {
     if (!isGameOver) {
-        // Aplica aceleração conforme a tecla
         if (keys["w"] || keys["arrowup"]) p1.vy -= accel;
         if (keys["s"] || keys["arrowdown"]) p1.vy += accel;
         if (keys["a"] || keys["arrowleft"]) p1.vx -= accel;
         if (keys["d"] || keys["arrowright"]) p1.vx += accel;
 
-        // Aplica atrito
         p1.vx *= friction;
         p1.vy *= friction;
 
-        // Tenta mover no Eixo X
         if (!isCollidingWithWalls(p1.x + p1.vx, p1.y)) {
             p1.x += p1.vx;
         } else {
             p1.vx = 0;
         }
 
-        // Tenta mover no Eixo Y
         if (!isCollidingWithWalls(p1.x, p1.y + p1.vy)) {
             p1.y += p1.vy;
         } else {
             p1.vy = 0;
         }
 
-        // Transmite posição se houver movimento relevante
         if ((Math.abs(p1.vx) > 0.05 || Math.abs(p1.vy) > 0.05) && activeConn && activeConn.open) {
             activeConn.send({ type: 'move', x: p1.x, y: p1.y });
         }
@@ -323,42 +301,47 @@ function update() {
     requestAnimationFrame(update);
 }
 
-// --- DESENHO DAS PAREDES EM LINHAS ---
+// --- RENDERIZAÇÃO ---
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, MAZE_SIZE, MAZE_SIZE);
 
-    const rows = mazeGrid.length;
-    const cols = mazeGrid[0].length;
-
-    // Desenha o Labirinto (Paredes em linha preta)
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 2;
-
-    for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-            let x = offsetX + c * tileSize;
-            let y = offsetY + r * tileSize;
+    // 1. Desenha o chão das paredes internas e Goal
+    for (let r = 0; r < N; r++) {
+        for (let c = 0; c < N; c++) {
+            let x = c * tileSize;
+            let y = r * tileSize;
 
             if (mazeGrid[r][c] === 1) {
-                // Desenha contornos de parede apenas onde há divisão
-                ctx.strokeRect(x, y, tileSize, tileSize);
                 ctx.fillStyle = "#000000";
                 ctx.fillRect(x, y, tileSize, tileSize);
             } else if (mazeGrid[r][c] === 2) {
-                // Goal Central (Dourado)
                 ctx.fillStyle = "#FFD700";
-                ctx.fillRect(x + 2, y + 2, tileSize - 4, tileSize - 4);
-                ctx.strokeStyle = "#DAA520";
-                ctx.strokeRect(x + 2, y + 2, tileSize - 4, tileSize - 4);
+                ctx.fillRect(x + 1, y + 1, tileSize - 2, tileSize - 2);
             }
         }
     }
 
-    // Jogador 1 (Azul)
+    // 2. Desenha as linhas internas finas (1px)
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 1;
+    for (let r = 0; r < N; r++) {
+        for (let c = 0; c < N; c++) {
+            if (mazeGrid[r][c] === 1) {
+                let x = c * tileSize;
+                let y = r * tileSize;
+                ctx.strokeRect(x, y, tileSize, tileSize);
+            }
+        }
+    }
+
+    // 3. Desenha o contorno externo mais grosso (3px)
+    ctx.lineWidth = 3;
+    ctx.strokeRect(1.5, 1.5, MAZE_SIZE - 3, MAZE_SIZE - 3);
+
+    // 4. Desenha os Jogadores
     ctx.fillStyle = p1.color;
     ctx.fillRect(p1.x, p1.y, playerSize, playerSize);
 
-    // Jogador 2 (Vermelho)
     ctx.fillStyle = p2.color;
     ctx.fillRect(p2.x, p2.y, playerSize, playerSize);
 }
