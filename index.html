@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Labirinto Multiplayer P2P</title>
+<title>Labirinto Fluido P2P</title>
 
-<!-- Biblioteca PeerJS para multiplayer sem servidor -->
+<!-- Biblioteca PeerJS para multiplayer -->
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
 <style>
@@ -15,41 +15,43 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #111;
-        font-family: sans-serif;
+        background: #ffffff;
+        font-family: Arial, sans-serif;
     }
 
     canvas {
         display: block;
-        background: #222;
+        background: #ffffff;
     }
 
-    /* Interface de Conexão */
+    /* Interface de Conexão Clean */
     #ui {
         position: absolute;
-        top: 10px;
-        left: 10px;
-        background: rgba(0, 0, 0, 0.85);
-        color: white;
-        padding: 12px;
+        top: 15px;
+        left: 15px;
+        background: rgba(255, 255, 255, 0.95);
+        color: #000;
+        padding: 12px 16px;
         border-radius: 8px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        border: 1px solid #ccc;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
         z-index: 10;
         font-size: 13px;
     }
 
     #ui input {
         width: 130px;
-        padding: 4px;
-        border: none;
+        padding: 5px;
+        border: 1px solid #bbb;
         border-radius: 4px;
+        outline: none;
     }
 
     #ui button {
-        padding: 4px 8px;
+        padding: 5px 10px;
         cursor: pointer;
-        background: #4CAF50;
-        color: white;
+        background: #000;
+        color: #fff;
         border: none;
         border-radius: 4px;
         font-weight: bold;
@@ -60,23 +62,23 @@
         margin-top: 6px;
     }
 
-    /* Overlay de Fim de Jogo */
+    /* Tela de Fim de Jogo */
     #game-over {
         display: none;
         position: absolute;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.9);
-        color: gold;
-        padding: 25px 40px;
+        background: #ffffff;
+        color: #000;
+        padding: 30px 50px;
         border-radius: 12px;
         text-align: center;
-        font-size: 24px;
+        font-size: 22px;
         font-weight: bold;
-        border: 2px solid gold;
+        border: 2px solid #000;
         z-index: 20;
-        box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
     }
 </style>
 </head>
@@ -88,12 +90,12 @@
         <input type="text" id="peer-id-input" placeholder="ID do amigo">
         <button id="connect-btn">Conectar</button>
     </div>
-    <div id="status" style="color: #ff9800;">Aguardando conexão...</div>
+    <div id="status" style="color: #666;">Aguardando conexão...</div>
 </div>
 
 <div id="game-over">
     PARTIDA FINALIZADA!<br>
-    <span style="font-size: 18px; color: white;">Reiniciando em <span id="timer">5</span>...</span>
+    <span style="font-size: 16px; color: #555; font-weight: normal;">Reiniciando em <span id="timer">5</span>...</span>
 </div>
 
 <canvas id="gameCanvas"></canvas>
@@ -109,43 +111,57 @@ const statusDisplay = document.getElementById("status");
 const gameOverScreen = document.getElementById("game-over");
 const timerDisplay = document.getElementById("timer");
 
-// Ajusta o tamanho da tela
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-const size = 16; // Tamanho dos jogadores
-const speed = 3; // Velocidade de movimento
 let isGameOver = false;
 
-// Jogadores (P1 = Azul/Você, P2 = Vermelho/Adversário)
-let p1 = { x: 30, y: 30, color: "#2196F3" };
-let p2 = { x: -100, y: -100, color: "#f44336" };
-
-// Matriz simples do labirinto (0 = Caminho livre, 1 = Parede, 2 = Objetivo Central)
-// Desenhado de forma simétrica com múltiplos caminhos que chegam ao centro (número 2)
-const map = [
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0,1],
-    [1,0,1,0,1,0,1,1,1,0,1,1,1,0,1,0,1,0,1],
-    [1,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,1,0,1],
-    [1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1,1,0,1],
-    [1,0,0,0,1,0,0,0,1,2,1,0,0,0,1,0,0,0,1],
-    [1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1,1,0,1],
-    [1,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,1,0,1],
-    [1,0,1,0,1,1,1,0,1,1,1,0,1,1,1,0,1,0,1],
-    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+// 1 = Parede, 0 = Corredor, 2 = Goal (Centro)
+const mazeGrid = [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,1],
+    [1,1,1,0,1,0,1,0,1,0,1,1,1,0,1,0,1,1,1,0,1],
+    [1,0,0,0,0,0,1,0,0,0,1,0,0,0,1,0,1,0,0,0,1],
+    [1,0,1,1,1,1,1,1,1,0,1,0,1,1,1,0,1,0,1,1,1],
+    [1,0,1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,1],
+    [1,0,1,0,1,1,1,0,1,1,1,1,1,0,1,1,1,1,1,0,1],
+    [1,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,1],
+    [1,1,1,1,1,0,1,1,1,0,1,0,1,1,1,1,1,0,1,0,1],
+    [1,0,0,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0,1],
+    [1,0,1,1,1,1,1,0,1,1,2,1,1,0,1,0,1,1,1,0,1],
+    [1,0,1,0,0,0,1,0,1,0,0,0,1,0,1,0,0,0,1,0,1],
+    [1,0,1,0,1,0,1,0,1,1,0,1,1,0,1,1,1,0,1,0,1],
+    [1,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,1],
+    [1,1,1,0,1,1,1,1,0,1,1,1,1,1,1,0,1,1,1,0,1],
+    [1,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,1],
+    [1,0,1,1,1,0,1,1,1,1,1,1,1,0,1,1,1,0,1,0,1],
+    [1,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,1,0,0,0,1],
+    [1,0,1,0,1,1,1,0,1,1,1,0,1,1,1,0,1,1,1,0,1],
+    [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
 ];
 
 let tileSize = 0;
 let offsetX = 0;
 let offsetY = 0;
 
-// Centraliza e calcula as dimensões do labirinto na tela
+// Configurações dos Jogadores (P1 = Azul, P2 = Vermelho)
+const playerSizeRatio = 0.5; // Tamanho proporcional à célula para deslizar bem
+let playerSize = 0;
+
+let p1 = { x: 0, y: 0, vx: 0, vy: 0, color: "#0066FF" };
+let p2 = { x: -100, y: -100, color: "#FF3333" };
+
+// Aceleração e Atrito para movimentação fluida
+const accel = 0.6;
+const friction = 0.82;
+
 function calculateLayout() {
-    const rows = map.length;
-    const cols = map[0].length;
-    tileSize = Math.min(canvas.width / cols, canvas.height / rows) * 0.85;
+    const rows = mazeGrid.length;
+    const cols = mazeGrid[0].length;
+    tileSize = Math.min(canvas.width / cols, canvas.height / rows) * 0.9;
+    playerSize = tileSize * playerSizeRatio;
+
     offsetX = (canvas.width - cols * tileSize) / 2;
     offsetY = (canvas.height - rows * tileSize) / 2;
 }
@@ -157,44 +173,46 @@ window.addEventListener('resize', () => {
     calculateLayout();
 });
 
-// Colisão com as paredes do labirinto
-function canMove(newX, newY) {
+// Checa colisão com paredes usando caixa delimitadora (Bounding Box)
+function isCollidingWithWalls(newX, newY) {
+    const margin = 1;
     const points = [
-        { x: newX, y: newY },
-        { x: newX + size, y: newY },
-        { x: newX, y: newY + size },
-        { x: newX + size, y: newY + size }
+        { x: newX + margin, y: newY + margin },
+        { x: newX + playerSize - margin, y: newY + margin },
+        { x: newX + margin, y: newY + playerSize - margin },
+        { x: newX + playerSize - margin, y: newY + playerSize - margin }
     ];
 
     for (let pt of points) {
-        let col = Math.floor((pt.x - offsetX) / tileSize);
-        let row = Math.floor((pt.y - offsetY) / tileSize);
+        let c = Math.floor((pt.x - offsetX) / tileSize);
+        let r = Math.floor((pt.y - offsetY) / tileSize);
 
-        if (row >= 0 && row < map.length && col >= 0 && col < map[0].length) {
-            if (map[row][col] === 1) return false; // Parede
+        if (r >= 0 && r < mazeGrid.length && c >= 0 && c < mazeGrid[0].length) {
+            if (mazeGrid[r][c] === 1) return true;
         }
     }
-    return true;
+    return false;
 }
 
-// Verifica se encostou no bloco do Objetivo (Centro = 2)
+// Checa se o centro do jogador encostou na célula do Goal (2)
 function checkGoal(px, py) {
-    let centerGridX = Math.floor(((px + size/2) - offsetX) / tileSize);
-    let centerGridY = Math.floor(((py + size/2) - offsetY) / tileSize);
+    let centerX = px + playerSize / 2;
+    let centerY = py + playerSize / 2;
 
-    if (centerGridY >= 0 && centerGridY < map.length && centerGridX >= 0 && centerGridX < map[0].length) {
-        if (map[centerGridY][centerGridX] === 2) {
+    let c = Math.floor((centerX - offsetX) / tileSize);
+    let r = Math.floor((centerY - offsetY) / tileSize);
+
+    if (r >= 0 && r < mazeGrid.length && c >= 0 && c < mazeGrid[0].length) {
+        if (mazeGrid[r][c] === 2) {
             triggerWin();
         }
     }
 }
 
-// Dispara o fim da partida e contagem regressiva
 function triggerWin() {
     if (isGameOver) return;
     isGameOver = true;
 
-    // Notifica o outro jogador se estiver conectado
     if (activeConn && activeConn.open) {
         activeConn.send({ type: 'win' });
     }
@@ -213,25 +231,24 @@ function triggerWin() {
     }, 1000);
 }
 
-// Reinicia posições
 function resetGame() {
-    p1.x = offsetX + tileSize + 5;
-    p1.y = offsetY + tileSize + 5;
+    p1.x = offsetX + tileSize + (tileSize - playerSize) / 2;
+    p1.y = offsetY + tileSize + (tileSize - playerSize) / 2;
+    p1.vx = 0;
+    p1.vy = 0;
     p2.x = -100;
     p2.y = -100;
     isGameOver = false;
     gameOverScreen.style.display = "none";
 }
 
-// Posição inicial
 resetGame();
 
-// --- REDE / MULTIPLAYER (PeerJS) ---
+// --- REDE (PeerJS) ---
 let activeConn = null;
 const peer = new Peer();
 
 peer.on('open', id => myIdDisplay.innerText = id);
-
 peer.on('connection', conn => setupConnection(conn));
 
 connectBtn.addEventListener('click', () => {
@@ -243,7 +260,7 @@ function setupConnection(conn) {
     activeConn = conn;
     conn.on('open', () => {
         statusDisplay.innerText = "Conectado!";
-        statusDisplay.style.color = "#4CAF50";
+        statusDisplay.style.color = "#008800";
     });
 
     conn.on('data', data => {
@@ -257,7 +274,7 @@ function setupConnection(conn) {
 
     conn.on('close', () => {
         statusDisplay.innerText = "Desconectado.";
-        statusDisplay.style.color = "#f44336";
+        statusDisplay.style.color = "#cc0000";
         p2.x = -100;
     });
 }
@@ -267,22 +284,35 @@ const keys = {};
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
-// --- LOOP DO JOGO ---
+// --- LOOP DO JOGO (Movimentação com física contínua) ---
 function update() {
     if (!isGameOver) {
-        let nextX = p1.x;
-        let nextY = p1.y;
-        let moved = false;
+        // Aplica aceleração conforme a tecla
+        if (keys["w"] || keys["arrowup"]) p1.vy -= accel;
+        if (keys["s"] || keys["arrowdown"]) p1.vy += accel;
+        if (keys["a"] || keys["arrowleft"]) p1.vx -= accel;
+        if (keys["d"] || keys["arrowright"]) p1.vx += accel;
 
-        if (keys["w"] || keys["arrowup"]) { nextY -= speed; moved = true; }
-        if (keys["s"] || keys["arrowdown"]) { nextY += speed; moved = true; }
-        if (keys["a"] || keys["arrowleft"]) { nextX -= speed; moved = true; }
-        if (keys["d"] || keys["arrowright"]) { nextX += speed; moved = true; }
+        // Aplica atrito
+        p1.vx *= friction;
+        p1.vy *= friction;
 
-        if (canMove(nextX, p1.y)) p1.x = nextX;
-        if (canMove(p1.x, nextY)) p1.y = nextY;
+        // Tenta mover no Eixo X
+        if (!isCollidingWithWalls(p1.x + p1.vx, p1.y)) {
+            p1.x += p1.vx;
+        } else {
+            p1.vx = 0;
+        }
 
-        if (moved && activeConn && activeConn.open) {
+        // Tenta mover no Eixo Y
+        if (!isCollidingWithWalls(p1.x, p1.y + p1.vy)) {
+            p1.y += p1.vy;
+        } else {
+            p1.vy = 0;
+        }
+
+        // Transmite posição se houver movimento relevante
+        if ((Math.abs(p1.vx) > 0.05 || Math.abs(p1.vy) > 0.05) && activeConn && activeConn.open) {
             activeConn.send({ type: 'move', x: p1.x, y: p1.y });
         }
 
@@ -293,39 +323,44 @@ function update() {
     requestAnimationFrame(update);
 }
 
-// --- DESENHO NA TELA ---
+// --- DESENHO DAS PAREDES EM LINHAS ---
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Desenha o Labirinto
-    for (let r = 0; r < map.length; r++) {
-        for (let c = 0; c < map[0].length; c++) {
+    const rows = mazeGrid.length;
+    const cols = mazeGrid[0].length;
+
+    // Desenha o Labirinto (Paredes em linha preta)
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 2;
+
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
             let x = offsetX + c * tileSize;
             let y = offsetY + r * tileSize;
 
-            if (map[r][c] === 1) {
-                ctx.fillStyle = "#333"; // Parede
-                ctx.fillRect(x, y, tileSize, tileSize);
-                ctx.strokeStyle = "#444";
+            if (mazeGrid[r][c] === 1) {
+                // Desenha contornos de parede apenas onde há divisão
                 ctx.strokeRect(x, y, tileSize, tileSize);
-            } else if (map[r][c] === 2) {
-                ctx.fillStyle = "#FFD700"; // Centro / Goal (Dourado)
+                ctx.fillStyle = "#000000";
                 ctx.fillRect(x, y, tileSize, tileSize);
-                ctx.shadowColor = "#FFD700";
-                ctx.shadowBlur = 10;
-                ctx.fillRect(x + 4, y + 4, tileSize - 8, tileSize - 8);
-                ctx.shadowBlur = 0;
+            } else if (mazeGrid[r][c] === 2) {
+                // Goal Central (Dourado)
+                ctx.fillStyle = "#FFD700";
+                ctx.fillRect(x + 2, y + 2, tileSize - 4, tileSize - 4);
+                ctx.strokeStyle = "#DAA520";
+                ctx.strokeRect(x + 2, y + 2, tileSize - 4, tileSize - 4);
             }
         }
     }
 
-    // Desenha Jogador 1 (Azul)
+    // Jogador 1 (Azul)
     ctx.fillStyle = p1.color;
-    ctx.fillRect(p1.x, p1.y, size, size);
+    ctx.fillRect(p1.x, p1.y, playerSize, playerSize);
 
-    // Desenha Jogador 2 (Vermelho)
+    // Jogador 2 (Vermelho)
     ctx.fillStyle = p2.color;
-    ctx.fillRect(p2.x, p2.y, size, size);
+    ctx.fillRect(p2.x, p2.y, playerSize, playerSize);
 }
 
 update();
