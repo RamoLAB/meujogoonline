@@ -42,11 +42,14 @@
     }
 
     #ui input {
-        width: 130px;
+        width: 100px;
         padding: 5px;
         border: 1px solid #bbb;
         border-radius: 4px;
         outline: none;
+        text-transform: uppercase;
+        font-weight: bold;
+        letter-spacing: 1px;
     }
 
     #ui button {
@@ -100,9 +103,9 @@
 <body>
 
 <div id="ui">
-    <div><strong>Seu ID:</strong> <span id="my-id">Gerando...</span></div>
+    <div><strong>Seu ID:</strong> <span id="my-id" style="font-weight: bold; letter-spacing: 1px;">Gerando...</span></div>
     <div style="margin-top: 8px;">
-        <input type="text" id="peer-id-input" placeholder="ID do amigo">
+        <input type="text" id="peer-id-input" placeholder="ID (5 letras)" maxlength="5">
         <button id="connect-btn">Conectar</button>
     </div>
     <div id="status" style="color: #cc0000;">Aguardando 2º jogador...</div>
@@ -131,8 +134,8 @@ const timerDisplay = document.getElementById("timer");
 const countdownOverlay = document.getElementById("countdown-overlay");
 
 let isGameOver = false;
-let gameStarted = false; // Só libera o jogo quando 2º jogador conectar
-let canMove = false;     // Bloqueia movimentação durante a contagem
+let gameStarted = false;
+let canMove = false;
 
 const mazeGrid = [
     [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
@@ -167,16 +170,26 @@ let playerSize = 0;
 let goalP1 = { x: 0, y: 0 };
 let goalP2 = { x: 0, y: 0 };
 
-let p1 = { x: 0, y: 0, vx: 0, vy: 0, dirX: 1, dirY: 0, color: "#0066FF", alive: true };
+let isHost = false;
+let p1 = { x: -100, y: -100, vx: 0, vy: 0, dirX: 1, dirY: 0, color: "#0066FF", alive: true };
 let p2 = { x: -100, y: -100, dirX: -1, dirY: 0, color: "#FF3333", alive: true };
 
-// Projéteis
 let bullets = [];
 const bulletSpeed = 7;
 const bulletRadius = 3;
 
 const accel = 1.1;
 const friction = 0.85;
+
+// Gera um ID curto aleatório de 5 caracteres
+function generateShortId() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let result = '';
+    for (let i = 0; i < 5; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
 
 function resizeCanvas() {
     canvas.width = window.innerWidth;
@@ -225,8 +238,10 @@ function checkGoal(px, py) {
     let pCenterX = px + playerSize / 2;
     let pCenterY = py + playerSize / 2;
 
-    if (pCenterX >= goalP1.x && pCenterX <= goalP1.x + tileSize &&
-        pCenterY >= goalP1.y && pCenterY <= goalP1.y + tileSize) {
+    let myGoal = isHost ? goalP1 : goalP2;
+
+    if (pCenterX >= myGoal.x && pCenterX <= myGoal.x + tileSize &&
+        pCenterY >= myGoal.y && pCenterY <= myGoal.y + tileSize) {
         triggerWin(true);
     }
 }
@@ -251,12 +266,13 @@ function triggerWin(isWinner) {
         timerDisplay.innerText = timeLeft;
         if (timeLeft <= 0) {
             clearInterval(interval);
-            startNewMatch();
+            if (isHost) {
+                startCountdown();
+            }
         }
     }, 1000);
 }
 
-// Inicia contagem regressiva 3, 2, 1
 function startCountdown() {
     isGameOver = false;
     canMove = false;
@@ -264,20 +280,35 @@ function startCountdown() {
     p1.alive = true;
     p2.alive = true;
 
-    // Reseta posições
-    p1.x = offsetX + 1 * tileSize + (tileSize - playerSize) / 2;
-    p1.y = offsetY + 1 * tileSize + (tileSize - playerSize) / 2;
-    p1.vx = 0; p1.vy = 0; p1.dirX = 1; p1.dirY = 0;
+    if (isHost) {
+        // P1 (Host/Azul) nasce na esquerda
+        p1.x = offsetX + 1 * tileSize + (tileSize - playerSize) / 2;
+        p1.y = offsetY + 1 * tileSize + (tileSize - playerSize) / 2;
+        // P2 (Client/Vermelho) nasce na direita
+        p2.x = offsetX + 19 * tileSize + (tileSize - playerSize) / 2;
+        p2.y = offsetY + 1 * tileSize + (tileSize - playerSize) / 2;
+    } else {
+        // P1 (Client/Vermelho) nasce na direita
+        p1.x = offsetX + 19 * tileSize + (tileSize - playerSize) / 2;
+        p1.y = offsetY + 1 * tileSize + (tileSize - playerSize) / 2;
+        // P2 (Host/Azul) nasce na esquerda
+        p2.x = offsetX + 1 * tileSize + (tileSize - playerSize) / 2;
+        p2.y = offsetY + 1 * tileSize + (tileSize - playerSize) / 2;
+    }
 
-    p2.x = offsetX + 19 * tileSize + (tileSize - playerSize) / 2;
-    p2.y = offsetY + 1 * tileSize + (tileSize - playerSize) / 2;
-    p2.dirX = -1; p2.dirY = 0;
+    p1.vx = 0; p1.vy = 0; p1.dirX = isHost ? 1 : -1; p1.dirY = 0;
+    p2.dirX = isHost ? -1 : 1; p2.dirY = 0;
 
     gameOverScreen.style.display = "none";
     countdownOverlay.style.display = "block";
 
     let count = 3;
     countdownOverlay.innerText = count;
+
+    // Transmite inicio da contagem ao adversário se for o Host
+    if (isHost && activeConn && activeConn.open) {
+        activeConn.send({ type: 'start_countdown' });
+    }
 
     const timer = setInterval(() => {
         count--;
@@ -293,22 +324,28 @@ function startCountdown() {
     }, 1000);
 }
 
-function startNewMatch() {
-    if (gameStarted) {
-        startCountdown();
-    }
-}
-
 // --- REDE (PeerJS) ---
 let activeConn = null;
-const peer = new Peer();
+const customId = generateShortId();
+const peer = new Peer(customId);
 
 peer.on('open', id => myIdDisplay.innerText = id);
-peer.on('connection', conn => setupConnection(conn));
+
+peer.on('connection', conn => {
+    isHost = true;
+    p1.color = "#0066FF"; // Host = Azul
+    p2.color = "#FF3333";
+    setupConnection(conn);
+});
 
 connectBtn.addEventListener('click', () => {
-    const targetId = peerIdInput.value.trim();
-    if (targetId) setupConnection(peer.connect(targetId));
+    const targetId = peerIdInput.value.trim().toUpperCase();
+    if (targetId) {
+        isHost = false;
+        p1.color = "#FF3333"; // Client = Vermelho
+        p2.color = "#0066FF";
+        setupConnection(peer.connect(targetId));
+    }
 });
 
 function setupConnection(conn) {
@@ -317,18 +354,25 @@ function setupConnection(conn) {
         statusDisplay.innerText = "Conectado!";
         statusDisplay.style.color = "#008800";
         gameStarted = true;
-        startCountdown();
+
+        // Envia posição inicial imediatamente ao conectar
+        sendPosition();
+
+        if (isHost) {
+            startCountdown();
+        }
     });
 
     conn.on('data', data => {
         if (data.type === 'move') {
             p2.x = offsetX + (data.rx * (tileSize * N));
             p2.y = offsetY + (data.ry * (tileSize * N));
+        } else if (data.type === 'start_countdown') {
+            startCountdown();
         } else if (data.type === 'shoot') {
-            // Tiro disparado pelo adversário
             bullets.push({
-                x: data.x,
-                y: data.y,
+                x: offsetX + (data.rx * (tileSize * N)),
+                y: offsetY + (data.ry * (tileSize * N)),
                 vx: data.vx,
                 vy: data.vy,
                 owner: 'p2'
@@ -346,6 +390,16 @@ function setupConnection(conn) {
         gameStarted = false;
         canMove = false;
     });
+}
+
+function sendPosition() {
+    if (activeConn && activeConn.open) {
+        activeConn.send({
+            type: 'move',
+            rx: (p1.x - offsetX) / (tileSize * N),
+            ry: (p1.y - offsetY) / (tileSize * N)
+        });
+    }
 }
 
 // --- CONTROLES E TIRO ---
@@ -371,8 +425,8 @@ function shoot() {
     if (activeConn && activeConn.open) {
         activeConn.send({
             type: 'shoot',
-            x: (startX - offsetX) / (tileSize * N),
-            y: (startY - offsetY) / (tileSize * N),
+            rx: (startX - offsetX) / (tileSize * N),
+            ry: (startY - offsetY) / (tileSize * N),
             vx: vx,
             vy: vy
         });
@@ -390,7 +444,6 @@ function update() {
         if (keys["a"] || keys["arrowleft"]) { p1.vx -= accel; moveX = -1; }
         if (keys["d"] || keys["arrowright"]) { p1.vx += accel; moveX = 1; }
 
-        // Atualiza a direção do tiro com base no último movimento
         if (moveX !== 0 || moveY !== 0) {
             p1.dirX = moveX;
             p1.dirY = moveY;
@@ -411,31 +464,16 @@ function update() {
             p1.vy = 0;
         }
 
-        if ((Math.abs(p1.vx) > 0.05 || Math.abs(p1.vy) > 0.05) && activeConn && activeConn.open) {
-            activeConn.send({
-                type: 'move',
-                rx: (p1.x - offsetX) / (tileSize * N),
-                ry: (p1.y - offsetY) / (tileSize * N)
-            });
-        }
-
+        sendPosition();
         checkGoal(p1.x, p1.y);
     }
 
     // Atualiza Tiros
     for (let i = bullets.length - 1; i >= 0; i--) {
         let b = bullets[i];
-        
-        // Converte coordenadas se for tiro do adversário vindo em percentual
-        if (b.owner === 'p2' && b.x < 2) {
-            b.x = offsetX + (b.x * (tileSize * N));
-            b.y = offsetY + (b.y * (tileSize * N));
-        }
-
         b.x += b.vx;
         b.y += b.vy;
 
-        // Colisão do tiro com paredes
         let c = Math.floor((b.x - offsetX) / tileSize);
         let r = Math.floor((b.y - offsetY) / tileSize);
         if (r >= 0 && r < N && c >= 0 && c < N && mazeGrid[r][c] === 1) {
@@ -443,7 +481,16 @@ function update() {
             continue;
         }
 
-        // Colisão do tiro do P2 acertando o P1
+        // Colisão com adversário (P2)
+        if (b.owner === 'p1' && p2.alive) {
+            if (b.x >= p2.x && b.x <= p2.x + playerSize && b.y >= p2.y && b.y <= p2.y + playerSize) {
+                p2.alive = false;
+                bullets.splice(i, 1);
+                continue;
+            }
+        }
+
+        // Colisão sofrida pelo jogador local (P1)
         if (b.owner === 'p2' && p1.alive) {
             if (b.x >= p1.x && b.x <= p1.x + playerSize && b.y >= p1.y && b.y <= p1.y + playerSize) {
                 p1.alive = false;
@@ -451,15 +498,6 @@ function update() {
                 if (activeConn && activeConn.open) {
                     activeConn.send({ type: 'killed' });
                 }
-                continue;
-            }
-        }
-
-        // Colisão do tiro do P1 acertando o P2
-        if (b.owner === 'p1' && p2.alive) {
-            if (b.x >= p2.x && b.x <= p2.x + playerSize && b.y >= p2.y && b.y <= p2.y + playerSize) {
-                p2.alive = false;
-                bullets.splice(i, 1);
                 continue;
             }
         }
@@ -495,29 +533,29 @@ function draw() {
     ctx.fillRect(0, offsetY + N * tileSize, canvas.width, canvas.height - (offsetY + N * tileSize));
 
     // GOALs
-    ctx.fillStyle = p1.color;
-    ctx.fillRect(goalP1.x, goalP1.y, tileSize, tileSize);
+    let goalAzul = goalP1;
+    let goalVermelho = goalP2;
+
+    ctx.fillStyle = "#0066FF";
+    ctx.fillRect(goalAzul.x, goalAzul.y, tileSize, tileSize);
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold " + Math.floor(tileSize * 0.3) + "px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("GOAL", goalP1.x + tileSize / 2, goalP1.y + tileSize / 2);
+    ctx.fillText("GOAL", goalAzul.x + tileSize / 2, goalAzul.y + tileSize / 2);
 
-    ctx.fillStyle = p2.color;
-    ctx.fillRect(goalP2.x, goalP2.y, tileSize, tileSize);
+    ctx.fillStyle = "#FF3333";
+    ctx.fillRect(goalVermelho.x, goalVermelho.y, tileSize, tileSize);
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold " + Math.floor(tileSize * 0.3) + "px Arial";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("GOAL", goalP2.x + tileSize / 2, goalP2.y + tileSize / 2);
+    ctx.fillText("GOAL", goalVermelho.x + tileSize / 2, goalVermelho.y + tileSize / 2);
 
-    // Desenha Jogadores
-    if (p1.alive) {
+    // Desenha Jogadores se estiverem vivos
+    if (p1.alive && gameStarted) {
         ctx.fillStyle = p1.color;
         ctx.fillRect(p1.x, p1.y, playerSize, playerSize);
     }
 
-    if (p2.alive) {
+    if (p2.alive && gameStarted) {
         ctx.fillStyle = p2.color;
         ctx.fillRect(p2.x, p2.y, playerSize, playerSize);
     }
